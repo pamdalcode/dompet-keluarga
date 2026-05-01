@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <title>DompetKeluarga</title>
+  <link rel="manifest" href="manifest.json"/>
+  <meta name="theme-color" content="#10B981"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-title" content="DompetKeluarga"/>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#F1F5F9}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+const CATEGORIES = [
+  { id: "makanan", label: "Makanan & Minuman", icon: "🍽️", color: "#F97316" },
+  { id: "transportasi", label: "Transportasi", icon: "🚗", color: "#3B82F6" },
+  { id: "pendidikan", label: "Pendidikan", icon: "📚", color: "#8B5CF6" },
+  { id: "kesehatan", label: "Kesehatan", icon: "🏥", color: "#EF4444" },
+  { id: "rumah", label: "Rumah & Utilitas", icon: "🏠", color: "#10B981" },
+  { id: "hiburan", label: "Hiburan", icon: "🎬", color: "#F59E0B" },
+  { id: "belanja", label: "Belanja", icon: "🛍️", color: "#EC4899" },
+  { id: "lainnya", label: "Lainnya", icon: "📦", color: "#6B7280" },
+];
+
+const MEMBERS = ["Ayah", "Ibu", "Anak 1", "Anak 2"];
+
+function formatRupiah(num) {
+  return "Rp " + num.toLocaleString("id-ID");
+}
+
+function getTodayStr() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function loadData() {
+  try { return JSON.parse(localStorage.getItem("dk_expenses") || "[]"); } catch { return []; }
+}
+
+function saveData(data) {
+  localStorage.setItem("dk_expenses", JSON.stringify(data));
+}
+
+function App() {
+  const [expenses, setExpenses] = useState(() => {
+    const saved = loadData();
+    if (saved.length > 0) return saved;
+    return [
+      { id: 1, desc: "Belanja sayur & buah", amount: 85000, category: "makanan", member: "Ibu", date: getTodayStr() },
+      { id: 2, desc: "BBM motor", amount: 50000, category: "transportasi", member: "Ayah", date: getTodayStr() },
+      { id: 3, desc: "Buku pelajaran", amount: 120000, category: "pendidikan", member: "Anak 1", date: getTodayStr() },
+    ];
+  });
+  const [view, setView] = useState("dashboard");
+  const [form, setForm] = useState({ desc: "", amount: "", category: "makanan", member: "Ayah", date: getTodayStr() });
+  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [filterCat, setFilterCat] = useState("all");
+  const [toast, setToast] = useState(null);
+  const [editId, setEditId] = useState(null);
+
+  function updateExpenses(newList) {
+    setExpenses(newList);
+    saveData(newList);
+  }
+
+  const filtered = useMemo(() => {
+    return expenses.filter(e => {
+      const monthMatch = e.date.startsWith(filterMonth);
+      const catMatch = filterCat === "all" || e.category === filterCat;
+      return monthMatch && catMatch;
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [expenses, filterMonth, filterCat]);
+
+  const totalMonth = useMemo(() => filtered.reduce((s, e) => s + e.amount, 0), [filtered]);
+
+  const byCategory = useMemo(() => {
+    const map = {};
+    filtered.forEach(e => { map[e.category] = (map[e.category] || 0) + e.amount; });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [filtered]);
+
+  const byMember = useMemo(() => {
+    const map = {};
+    filtered.forEach(e => { map[e.member] = (map[e.member] || 0) + e.amount; });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [filtered]);
+
+  function showToast(msg, type = "success") {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2500);
+  }
+
+  function handleSubmit() {
+    if (!form.desc.trim() || !form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
+      showToast("Isi semua data dengan benar!", "error"); return;
+    }
+    if (editId !== null) {
+      const updated = expenses.map(e => e.id === editId ? { ...e, ...form, amount: Number(form.amount) } : e);
+      updateExpenses(updated);
+      showToast("Pengeluaran diperbarui!");
+      setEditId(null);
+    } else {
+      const updated = [...expenses, { ...form, amount: Number(form.amount), id: Date.now() }];
+      updateExpenses(updated);
+      showToast("Pengeluaran ditambahkan!");
+    }
+    setForm({ desc: "", amount: "", category: "makanan", member: "Ayah", date: getTodayStr() });
+    setView("dashboard");
+  }
+
+  function startEdit(e) {
+    setForm({ desc: e.desc, amount: String(e.amount), category: e.category, member: e.member, date: e.date });
+    setEditId(e.id); setView("add");
+  }
+
+  function deleteExpense(id) {
+    updateExpenses(expenses.filter(e => e.id !== id));
+    showToast("Dihapus!", "error");
+  }
+
+  const getCat = (id) => CATEGORIES.find(c => c.id === id) || CATEGORIES[7];
+
+  const S = styles;
+
+  return (
+    <div style={S.root}>
+      <div style={S.bgBlob1}/><div style={S.bgBlob2}/>
+      {toast && (
+        <div style={{...S.toast, background: toast.type==="error"?"#EF4444":"#10B981"}}>
+          {toast.type==="error"?"❌":"✅"} {toast.msg}
+        </div>
+      )}
+      <header style={S.header}>
+        <div style={S.headerLeft}>
+          <span style={S.logo}>💰</span>
+          <div>
+            <div style={S.appTitle}>DompetKeluarga</div>
+            <div style={S.appSub}>Pencatat Keuangan Rumah Tangga</div>
+          </div>
+        </div>
+        <button style={S.addBtn} onClick={() => { setEditId(null); setForm({ desc:"", amount:"", category:"makanan", member:"Ayah", date:getTodayStr() }); setView("add"); }}>
+          + Tambah
+        </button>
+      </header>
+
+      <nav style={S.nav}>
+        {[["dashboard","📊 Ringkasan"],["history","📋 Riwayat"]].map(([v,label]) => (
+          <button key={v} style={{...S.navBtn,...(view===v?S.navBtnActive:{})}} onClick={() => setView(v)}>{label}</button>
+        ))}
+      </nav>
+
+      <main style={S.main}>
+        {view==="add" && (
+          <div style={S.card}>
+            <h2 style={S.cardTitle}>{editId ? "✏️ Edit Pengeluaran" : "➕ Tambah Pengeluaran"}</h2>
+            <div style={S.formGrid}>
+              <div style={S.formGroup}>
+                <label style={S.label}>Keterangan</label>
+                <input style={S.input} placeholder="Mis: Belanja harian..." value={form.desc} onChange={e => setForm(f=>({...f,desc:e.target.value}))}/>
+              </div>
+              <div style={S.formGroup}>
+                <label style={S.label}>Jumlah (Rp)</label>
+                <input style={S.input} type="number" placeholder="0" value={form.amount} onChange={e => setForm(f=>({...f,amount:e.target.value}))}/>
+              </div>
+              <div style={S.formGroup}>
+                <label style={S.label}>Tanggal</label>
+                <input style={S.input} type="date" value={form.date} onChange={e => setForm(f=>({...f,date:e.target.value}))}/>
+              </div>
+              <div style={S.formGroup}>
+                <label style={S.label}>Anggota Keluarga</label>
+                <select style={S.input} value={form.member} onChange={e => setForm(f=>({...f,member:e.target.value}))}>
+                  {MEMBERS.map(m => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={S.formGroup}>
+              <label style={S.label}>Kategori</label>
+              <div style={S.catGrid}>
+                {CATEGORIES.map(cat => (
+                  <button key={cat.id} onClick={() => setForm(f=>({...f,category:cat.id}))}
+                    style={{...S.catBtn,...(form.category===cat.id?{background:cat.color,color:"#fff",borderColor:cat.color}:{})}}>
+                    <span style={{fontSize:20}}>{cat.icon}</span>
+                    <span style={{fontSize:11,marginTop:2}}>{cat.label.split(" ")[0]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={S.formActions}>
+              <button style={S.cancelBtn} onClick={() => { setView("dashboard"); setEditId(null); }}>Batal</button>
+              <button style={S.submitBtn} onClick={handleSubmit}>{editId ? "Simpan" : "Tambahkan"}</button>
+            </div>
+          </div>
+        )}
+
+        {view==="dashboard" && (
+          <>
+            <div style={S.monthRow}>
+              <span style={S.monthLabel}>📅 Periode:</span>
+              <input type="month" style={S.monthInput} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}/>
+            </div>
+            <div style={S.totalCard}>
+              <div style={S.totalLabel}>Total Pengeluaran Bulan Ini</div>
+              <div style={S.totalAmount}>{formatRupiah(totalMonth)}</div>
+              <div style={S.totalSub}>{filtered.length} transaksi tercatat</div>
+            </div>
+            <div style={S.card}>
+              <h3 style={S.cardTitle}>🏷️ Per Kategori</h3>
+              {byCategory.length===0 && <div style={S.empty}>Belum ada data</div>}
+              {byCategory.map(([catId,total]) => {
+                const cat = getCat(catId);
+                const pct = totalMonth > 0 ? (total/totalMonth)*100 : 0;
+                return (
+                  <div key={catId} style={S.barRow}>
+                    <div style={S.barLabel}>
+                      <span>{cat.icon} {cat.label}</span>
+                      <span style={{fontWeight:700,color:cat.color}}>{formatRupiah(total)}</span>
+                    </div>
+                    <div style={S.barTrack}><div style={{...S.barFill,width:`${pct}%`,background:cat.color}}/></div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={S.card}>
+              <h3 style={S.cardTitle}>👨‍👩‍👧‍👦 Per Anggota</h3>
+              {byMember.length===0 && <div style={S.empty}>Belum ada data</div>}
+              <div style={S.memberGrid}>
+                {byMember.map(([member,total]) => (
+                  <div key={member} style={S.memberCard}>
+                    <div style={S.memberAvatar}>{member[0]}</div>
+                    <div style={S.memberName}>{member}</div>
+                    <div style={S.memberAmount}>{formatRupiah(total)}</div>
+                    <div style={S.memberPct}>{totalMonth>0?((total/totalMonth)*100).toFixed(0):0}%</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={S.card}>
+              <h3 style={S.cardTitle}>🕐 Transaksi Terbaru</h3>
+              {filtered.slice(0,5).length===0 && <div style={S.empty}>Belum ada transaksi</div>}
+              {filtered.slice(0,5).map(e => {
+                const cat = getCat(e.category);
+                return (
+                  <div key={e.id} style={S.txRow}>
+                    <div style={{...S.txIcon,background:cat.color+"22"}}>{cat.icon}</div>
+                    <div style={S.txInfo}>
+                      <div style={S.txDesc}>{e.desc}</div>
+                      <div style={S.txMeta}>{e.member} • {e.date}</div>
+                    </div>
+                    <div style={{...S.txAmount,color:cat.color}}>{formatRupiah(e.amount)}</div>
+                  </div>
+                );
+              })}
+              {filtered.length>5 && (
+                <button style={S.seeAll} onClick={() => setView("history")}>Lihat semua →</button>
+              )}
+            </div>
+          </>
+        )}
+
+        {view==="history" && (
+          <div style={S.card}>
+            <h2 style={S.cardTitle}>📋 Riwayat Pengeluaran</h2>
+            <div style={S.filterRow}>
+              <input type="month" style={S.monthInput} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}/>
+              <select style={S.monthInput} value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+                <option value="all">Semua Kategori</option>
+                {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+              </select>
+            </div>
+            <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>
+              {filtered.length} transaksi — Total: <strong style={{color:"#0F172A"}}>{formatRupiah(totalMonth)}</strong>
+            </div>
+            {filtered.length===0 && <div style={S.empty}>Tidak ada data untuk periode ini</div>}
+            {filtered.map(e => {
+              const cat = getCat(e.category);
+              return (
+                <div key={e.id} style={S.txRow}>
+                  <div style={{...S.txIcon,background:cat.color+"22"}}>{cat.icon}</div>
+                  <div style={S.txInfo}>
+                    <div style={S.txDesc}>{e.desc}</div>
+                    <div style={S.txMeta}>{cat.label} • {e.member} • {e.date}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{...S.txAmount,color:cat.color}}>{formatRupiah(e.amount)}</div>
+                    <div style={S.txActions}>
+                      <button style={S.editBtn} onClick={() => startEdit(e)}>✏️</button>
+                      <button style={S.delBtn} onClick={() => deleteExpense(e.id)}>🗑️</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+const styles = {
+  root:{minHeight:"100vh",background:"#F1F5F9",fontFamily:"'Nunito','Segoe UI',sans-serif",position:"relative",overflowX:"hidden"},
+  bgBlob1:{position:"fixed",top:-80,right:-80,width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,#6EE7B7 0%,transparent 70%)",opacity:0.35,pointerEvents:"none",zIndex:0},
+  bgBlob2:{position:"fixed",bottom:-100,left:-100,width:400,height:400,borderRadius:"50%",background:"radial-gradient(circle,#93C5FD 0%,transparent 70%)",opacity:0.3,pointerEvents:"none",zIndex:0},
+  header:{position:"sticky",top:0,zIndex:100,background:"rgba(255,255,255,0.85)",backdropFilter:"blur(12px)",borderBottom:"1px solid #E2E8F0",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px"},
+  headerLeft:{display:"flex",alignItems:"center",gap:12},
+  logo:{fontSize:32,lineHeight:1},
+  appTitle:{fontSize:18,fontWeight:800,color:"#0F172A",letterSpacing:"-0.5px"},
+  appSub:{fontSize:11,color:"#94A3B8",fontWeight:600},
+  addBtn:{background:"linear-gradient(135deg,#10B981,#059669)",color:"#fff",border:"none",borderRadius:12,padding:"9px 18px",fontWeight:700,fontSize:14,cursor:"pointer",boxShadow:"0 4px 12px rgba(16,185,129,0.35)"},
+  nav:{display:"flex",gap:0,padding:"12px 20px 0",borderBottom:"2px solid #E2E8F0",background:"transparent",position:"relative",zIndex:1},
+  navBtn:{background:"none",border:"none",cursor:"pointer",padding:"8px 18px",fontSize:14,fontWeight:600,color:"#94A3B8",borderBottom:"3px solid transparent",marginBottom:-2},
+  navBtnActive:{color:"#10B981",borderBottomColor:"#10B981"},
+  main:{padding:"20px 16px 40px",maxWidth:600,margin:"0 auto",position:"relative",zIndex:1},
+  card:{background:"#fff",borderRadius:20,padding:"20px",boxShadow:"0 2px 20px rgba(0,0,0,0.06)",marginBottom:16},
+  cardTitle:{fontSize:16,fontWeight:800,color:"#0F172A",margin:"0 0 16px"},
+  totalCard:{background:"linear-gradient(135deg,#0F172A,#1E3A5F)",borderRadius:24,padding:"28px 24px",marginBottom:16,textAlign:"center",boxShadow:"0 8px 32px rgba(15,23,42,0.25)"},
+  totalLabel:{fontSize:13,color:"#94A3B8",fontWeight:600,marginBottom:8},
+  totalAmount:{fontSize:32,fontWeight:900,color:"#fff",letterSpacing:"-1px",marginBottom:6},
+  totalSub:{fontSize:12,color:"#64748B"},
+  monthRow:{display:"flex",alignItems:"center",gap:10,marginBottom:16},
+  monthLabel:{fontSize:13,fontWeight:700,color:"#64748B"},
+  monthInput:{border:"1.5px solid #E2E8F0",borderRadius:10,padding:"7px 12px",fontSize:13,fontWeight:600,color:"#0F172A",background:"#fff",cursor:"pointer",outline:"none"},
+  barRow:{marginBottom:14},
+  barLabel:{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:600,color:"#334155",marginBottom:6},
+  barTrack:{height:8,background:"#F1F5F9",borderRadius:99,overflow:"hidden"},
+  barFill:{height:"100%",borderRadius:99},
+  memberGrid:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:12},
+  memberCard:{background:"#F8FAFC",borderRadius:16,padding:"16px 12px",textAlign:"center",border:"1.5px solid #E2E8F0"},
+  memberAvatar:{width:44,height:44,borderRadius:"50%",background:"linear-gradient(135deg,#10B981,#3B82F6)",color:"#fff",fontWeight:900,fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 8px"},
+  memberName:{fontSize:13,fontWeight:700,color:"#0F172A",marginBottom:4},
+  memberAmount:{fontSize:12,fontWeight:800,color:"#10B981"},
+  memberPct:{fontSize:11,color:"#94A3B8",marginTop:2},
+  txRow:{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:"1px solid #F1F5F9"},
+  txIcon:{width:42,height:42,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0},
+  txInfo:{flex:1,minWidth:0},
+  txDesc:{fontSize:14,fontWeight:700,color:"#0F172A",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},
+  txMeta:{fontSize:11,color:"#94A3B8",marginTop:2},
+  txAmount:{fontWeight:800,fontSize:14,whiteSpace:"nowrap"},
+  txActions:{display:"flex",gap:4,justifyContent:"flex-end",marginTop:4},
+  editBtn:{background:"#EFF6FF",border:"none",cursor:"pointer",borderRadius:7,padding:"3px 7px",fontSize:13},
+  delBtn:{background:"#FEF2F2",border:"none",cursor:"pointer",borderRadius:7,padding:"3px 7px",fontSize:13},
+  seeAll:{display:"block",width:"100%",textAlign:"center",padding:"10px",marginTop:8,background:"none",border:"1.5px dashed #CBD5E1",borderRadius:12,color:"#64748B",fontWeight:700,fontSize:13,cursor:"pointer"},
+  empty:{textAlign:"center",color:"#94A3B8",padding:"24px 0",fontSize:14},
+  formGrid:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12},
+  formGroup:{display:"flex",flexDirection:"column",gap:5},
+  label:{fontSize:12,fontWeight:700,color:"#64748B",textTransform:"uppercase",letterSpacing:"0.5px"},
+  input:{border:"1.5px solid #E2E8F0",borderRadius:10,padding:"10px 12px",fontSize:14,color:"#0F172A",outline:"none",background:"#F8FAFC",fontFamily:"inherit",fontWeight:600},
+  catGrid:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginTop:4},
+  catBtn:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"10px 6px",border:"1.5px solid #E2E8F0",borderRadius:12,background:"#F8FAFC",cursor:"pointer",fontFamily:"inherit",color:"#334155"},
+  formActions:{display:"flex",gap:10,marginTop:20},
+  cancelBtn:{flex:1,padding:"13px",borderRadius:14,border:"1.5px solid #E2E8F0",background:"#F8FAFC",fontWeight:700,fontSize:14,color:"#64748B",cursor:"pointer",fontFamily:"inherit"},
+  submitBtn:{flex:2,padding:"13px",borderRadius:14,border:"none",background:"linear-gradient(135deg,#10B981,#059669)",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 12px rgba(16,185,129,0.35)"},
+  filterRow:{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"},
+  toast:{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",color:"#fff",fontWeight:700,fontSize:14,padding:"12px 24px",borderRadius:99,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,0.2)"},
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
